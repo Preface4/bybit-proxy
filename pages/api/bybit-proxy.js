@@ -3,7 +3,7 @@ import crypto from 'crypto';
 // Конфигурация
 const BYBIT_API_KEY = process.env.BYBIT_API_KEY;
 const BYBIT_API_SECRET = process.env.BYBIT_API_SECRET;
-const BYBIT_BASE_URL = 'https://api.bybit.ph';
+const BYBIT_BASE_URL = 'https://api-v5.bybit.com';
 
 // Функция для создания подписи
 const generateSignature = (parameters, secret) => {
@@ -63,14 +63,20 @@ export default async function handler(req, res) {
     console.log('Requesting Bybit URL:', url);
 
     // Выполняем запрос к Bybit
-    const response = await fetch(url, {
-      headers: {
-        'X-BAPI-API-KEY': BYBIT_API_KEY,
-        'X-BAPI-SIGN': signature,
-        'X-BAPI-TIMESTAMP': timestamp,
-        'X-BAPI-RECV-WINDOW': '5000'
-      }
-    });
+   const response = await fetch(url, {
+  headers: {
+    'X-BAPI-API-KEY': BYBIT_API_KEY,
+    'X-BAPI-SIGN': signature,
+    'X-BAPI-TIMESTAMP': timestamp,
+    'X-BAPI-RECV-WINDOW': '5000'
+  },
+  // Добавляем настройки таймаута
+  timeout: 30000, // 30 секунд
+  agent: new (require('https').Agent)({
+    keepAlive: true,
+    timeout: 30000
+  })
+});
 
     if (!response.ok) {
       console.error('Bybit response not OK:', {
