@@ -1,5 +1,4 @@
-import fetch from 'node-fetch';
-
+// Убираем импорт fetch, так как он встроен в Node.js
 export default async function handler(req, res) {
   console.log('Starting basic test...');
 
