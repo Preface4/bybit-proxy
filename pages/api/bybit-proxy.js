@@ -1,3 +1,4 @@
+// pages/api/bybit-proxy.js
 import crypto from 'crypto';
 
 // Конфигурация
@@ -25,26 +26,21 @@ const generateSignature = (parameters, secret) => {
 };
 
 export default async function handler(req, res) {
-  // Добавляем логирование запроса
   console.log('Received request:', {
     method: req.method,
     query: req.query,
     headers: req.headers
   });
-
   // Разрешаем только GET запросы
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    // Получаем endpoint из параметров
-    const { endpoint, ...otherParams } = req.query;
-    
     // Получаем параметры запроса
     const timestamp = Date.now().toString();
     const parameters = {
-      ...otherParams,
+      ...req.query,
       timestamp
     };
 
@@ -55,9 +51,7 @@ export default async function handler(req, res) {
     const queryString = Object.entries(parameters)
       .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
       .join('&');
-    
-    const url = `${BYBIT_BASE_URL}${endpoint}?${queryString}`;
-    console.log('Requesting Bybit URL:', url);
+    const url = `${BYBIT_BASE_URL}${req.query.endpoint}?${queryString}`;
 
     // Выполняем запрос к Bybit
     const response = await fetch(url, {
@@ -70,7 +64,6 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    console.log('Bybit response:', data);
     
     // Возвращаем результат
     res.status(200).json(data);
