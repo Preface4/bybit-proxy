@@ -6,45 +6,41 @@ const BYBIT_API_SECRET = process.env.BYBIT_API_SECRET;
 const BYBIT_BASE_URL = 'https://api.bytick.com';
 
 // Функция для создания подписи
-const generateSignature = (parameters, secret) => {
-  // Преобразуем параметры в строку для подписи
-  const timestamp = Date.now().toString();
-  const params = {
-    ...parameters,
-    timestamp
-  };
-  
-  const orderedParams = Object.keys(params)
+const generateSignature = (timestamp, params) => {
+  // Сортируем параметры
+  const sortedParams = Object.keys(params)
     .sort()
     .map(key => `${key}=${params[key]}`)
     .join('&');
-  
-  console.log('Ordered params for signature:', orderedParams);
-  
+
+  // Формируем строку для подписи: timestamp + apiKey + params
+  const stringToSign = `${timestamp}${BYBIT_API_KEY}${sortedParams}`;
+  console.log('String to sign:', stringToSign);
+
   const signature = crypto
-    .createHmac('sha256', secret)
-    .update(orderedParams)
+    .createHmac('sha256', BYBIT_API_SECRET)
+    .update(stringToSign)
     .digest('hex');
-  
+
   console.log('Generated signature:', signature);
-  
-  return {
-    signature,
-    timestamp,
-    orderedParams
-  };
+  return signature;
 };
 
 export default async function handler(req, res) {
   try {
-    const { signature, timestamp, orderedParams } = generateSignature(req.query, BYBIT_API_SECRET);
+    const timestamp = Date.now().toString();
+    console.log('Using timestamp:', timestamp);
+    console.log('Query parameters:', req.query);
+
+    // Генерируем подпись
+    const signature = generateSignature(timestamp, req.query);
+
+    // Формируем URL с параметрами
+    const queryString = Object.entries(req.query)
+      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+      .join('&');
     
-    console.log('Making request with:');
-    console.log('API Key:', BYBIT_API_KEY);
-    console.log('Timestamp:', timestamp);
-    console.log('Signature:', signature);
-    
-    const url = `${BYBIT_BASE_URL}/v5/execution/list?${orderedParams}`;
+    const url = `${BYBIT_BASE_URL}/v5/execution/list?${queryString}`;
     console.log('Request URL:', url);
 
     const response = await fetch(url, {
@@ -53,7 +49,8 @@ export default async function handler(req, res) {
         'X-BAPI-API-KEY': BYBIT_API_KEY,
         'X-BAPI-SIGN': signature,
         'X-BAPI-TIMESTAMP': timestamp,
-        'X-BAPI-RECV-WINDOW': '5000'
+        'X-BAPI-RECV-WINDOW': '5000',
+        'Content-Type': 'application/json'
       }
     });
 
