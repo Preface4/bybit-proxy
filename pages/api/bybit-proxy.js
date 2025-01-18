@@ -7,10 +7,13 @@ const BYBIT_BASE_URL = 'https://api.bytick.com';
 
 // Функция для создания подписи
 const generateSignature = (parameters, secret) => {
-  const sortedParams = Object.keys(parameters)
+  // Удаляем api_key из параметров для подписи
+  const { api_key, ...otherParams } = parameters;
+  
+  const sortedParams = Object.keys(otherParams)
     .sort()
     .reduce((acc, key) => {
-      acc[key] = parameters[key];
+      acc[key] = otherParams[key];
       return acc;
     }, {});
 
@@ -18,14 +21,14 @@ const generateSignature = (parameters, secret) => {
     .map(([key, value]) => `${key}=${value}`)
     .join('&');
   
-  console.log('Query string for signature:', queryString); // Логируем строку для подписи
+  console.log('Query string for signature:', queryString);
   
   const signature = crypto
     .createHmac('sha256', secret)
     .update(queryString)
     .digest('hex');
     
-  console.log('Generated signature:', signature); // Логируем подпись
+  console.log('Generated signature:', signature);
   return signature;
 };
 
@@ -37,11 +40,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Получаем параметры запроса
     const timestamp = Date.now().toString();
     const parameters = {
       ...req.query,
-      api_key: BYBIT_API_KEY,  // Добавляем API ключ в параметры для подписи
       timestamp
     };
 
