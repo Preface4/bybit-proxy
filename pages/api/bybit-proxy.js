@@ -7,20 +7,14 @@ const BYBIT_BASE_URL = 'https://api.bytick.com';
 const RECV_WINDOW = '5000';
 
 const generateSignature = (params) => {
-  // 1. Получаем timestamp
   const timestamp = Date.now().toString();
-  
-  // 2. Сортируем параметры запроса
   const queryString = Object.entries(params)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
     .join('&');
 
-  // 3. Формируем строку для подписи: timestamp + apiKey + recv_window + queryString
   const signString = `${timestamp}${BYBIT_API_KEY}${RECV_WINDOW}${queryString}`;
-  console.log('String to sign:', signString);
   
-  // 4. Генерируем подпись
   const signature = crypto
     .createHmac('sha256', BYBIT_API_SECRET)
     .update(signString)
@@ -29,21 +23,36 @@ const generateSignature = (params) => {
   return { signature, timestamp, queryString };
 };
 
+async function fetchPositionInfo(symbol) {
+  const posParams = {
+    category: 'linear',
+    symbol: symbol
+  };
+  
+  const { signature: posSignature, timestamp: posTimestamp } = generateSignature(posParams);
+  
+  const posResponse = await fetch(`${BYBIT_BASE_URL}/v5/position/list?${new URLSearchParams(posParams)}`, {
+    headers: {
+      'X-BAPI-API-KEY': BYBIT_API_KEY,
+      'X-BAPI-SIGN': posSignature,
+      'X-BAPI-TIMESTAMP': posTimestamp,
+      'X-BAPI-RECV-WINDOW': RECV_WINDOW
+    }
+  });
+  
+  return await posResponse.json();
+}
+
 export default async function handler(req, res) {
   try {
-    console.log('Request query:', req.query);
+    // Получаем историю сделок
+    const { signature, timestamp, queryString } = generateSignature({
+      ...req.query,
+      limit: '50'  // Увеличим лимит для получения большей истории
+    });
     
-    // Генерируем подпись и получаем параметры
-    const { signature, timestamp, queryString } = generateSignature(req.query);
-    console.log('Generated signature:', signature);
-    console.log('Using timestamp:', timestamp);
-    
-    // Формируем URL с параметрами запроса
-    const url = `${BYBIT_BASE_URL}/v5/execution/list?${queryString}`;
-    console.log('Final URL:', url);
-
-    const response = await fetch(url, {
-      method: 'GET',
+    const tradesUrl = `${BYBIT_BASE_URL}/v5/execution/list?${queryString}`;
+    const tradesResponse = await fetch(tradesUrl, {
       headers: {
         'X-BAPI-API-KEY': BYBIT_API_KEY,
         'X-BAPI-SIGN': signature,
@@ -52,10 +61,25 @@ export default async function handler(req, res) {
       }
     });
 
-    const data = await response.json();
-    console.log('Response:', data);
+    const tradesData = await tradesResponse.json();
     
-    res.status(200).json(data);
+    // Если есть сделки, получим информацию о текущих позициях
+    if (tradesData.result?.list?.length > 0) {
+      const uniqueSymbols = [...new Set(tradesData.result.list.map(trade => trade.symbol))];
+      const positionsData = await Promise.all(
+        uniqueSymbols.map(symbol => fetchPositionInfo(symbol))
+      );
+      
+      res.status(200).json({
+        trades: tradesData,
+        positions: positionsData
+      });
+    } else {
+      res.status(200).json({
+        trades: tradesData,
+        positions: []
+      });
+    }
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({
