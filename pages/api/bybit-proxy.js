@@ -7,41 +7,38 @@ const BYBIT_BASE_URL = 'https://api.bytick.com';
 
 // Функция для создания подписи
 const generateSignature = (timestamp, params) => {
-  // Сортируем параметры
-  const sortedParams = Object.keys(params)
-    .sort()
-    .map(key => `${key}=${params[key]}`)
+  // Сортируем параметры и формируем строку
+  const sortedParams = Object.entries(params)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
     .join('&');
 
-  // Формируем строку для подписи: timestamp + apiKey + params
+  // Строка для подписи
   const stringToSign = `${timestamp}${BYBIT_API_KEY}${sortedParams}`;
-  console.log('String to sign:', stringToSign);
+  console.log('Params for signature:', sortedParams);
+  console.log('Full string to sign:', stringToSign);
 
   const signature = crypto
     .createHmac('sha256', BYBIT_API_SECRET)
     .update(stringToSign)
     .digest('hex');
 
-  console.log('Generated signature:', signature);
-  return signature;
+  return { signature, sortedParams };
 };
 
 export default async function handler(req, res) {
   try {
     const timestamp = Date.now().toString();
-    console.log('Using timestamp:', timestamp);
-    console.log('Query parameters:', req.query);
+    console.log('Timestamp:', timestamp);
+    console.log('Original query:', req.query);
 
-    // Генерируем подпись
-    const signature = generateSignature(timestamp, req.query);
+    // Генерируем подпись и получаем отсортированные параметры
+    const { signature, sortedParams } = generateSignature(timestamp, req.query);
+    console.log('Generated signature:', signature);
 
-    // Формируем URL с параметрами
-    const queryString = Object.entries(req.query)
-      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-      .join('&');
-    
-    const url = `${BYBIT_BASE_URL}/v5/execution/list?${queryString}`;
-    console.log('Request URL:', url);
+    // Используем те же отсортированные параметры для URL
+    const url = `${BYBIT_BASE_URL}/v5/execution/list?${sortedParams}`;
+    console.log('Final URL:', url);
 
     const response = await fetch(url, {
       method: 'GET',
