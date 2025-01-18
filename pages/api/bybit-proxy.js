@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 
-// Конфигурация
 const BYBIT_API_KEY = process.env.BYBIT_API_KEY;
 const BYBIT_API_SECRET = process.env.BYBIT_API_SECRET;
 const BYBIT_BASE_URL = 'https://api.bytick.com';
@@ -14,7 +13,6 @@ const generateSignature = (params) => {
     .join('&');
 
   const signString = `${timestamp}${BYBIT_API_KEY}${RECV_WINDOW}${queryString}`;
-  
   const signature = crypto
     .createHmac('sha256', BYBIT_API_SECRET)
     .update(signString)
@@ -23,36 +21,75 @@ const generateSignature = (params) => {
   return { signature, timestamp, queryString };
 };
 
-async function fetchPositionInfo(symbol) {
-  const posParams = {
-    category: 'linear',
-    symbol: symbol
+async function fetchWalletBalance() {
+  const params = {
+    accountType: 'CONTRACT'
   };
   
-  const { signature: posSignature, timestamp: posTimestamp } = generateSignature(posParams);
+  const { signature, timestamp } = generateSignature(params);
   
-  const posResponse = await fetch(`${BYBIT_BASE_URL}/v5/position/list?${new URLSearchParams(posParams)}`, {
+  const response = await fetch(`${BYBIT_BASE_URL}/v5/account/wallet-balance?${new URLSearchParams(params)}`, {
     headers: {
       'X-BAPI-API-KEY': BYBIT_API_KEY,
-      'X-BAPI-SIGN': posSignature,
-      'X-BAPI-TIMESTAMP': posTimestamp,
+      'X-BAPI-SIGN': signature,
+      'X-BAPI-TIMESTAMP': timestamp,
       'X-BAPI-RECV-WINDOW': RECV_WINDOW
     }
   });
   
-  return await posResponse.json();
+  return await response.json();
+}
+
+async function fetchPositionInfo(symbol) {
+  const params = {
+    category: 'linear',
+    symbol: symbol
+  };
+  
+  const { signature, timestamp } = generateSignature(params);
+  
+  const response = await fetch(`${BYBIT_BASE_URL}/v5/position/list?${new URLSearchParams(params)}`, {
+    headers: {
+      'X-BAPI-API-KEY': BYBIT_API_KEY,
+      'X-BAPI-SIGN': signature,
+      'X-BAPI-TIMESTAMP': timestamp,
+      'X-BAPI-RECV-WINDOW': RECV_WINDOW
+    }
+  });
+  
+  return await response.json();
+}
+
+async function fetchClosedPnL(symbol) {
+  const params = {
+    category: 'linear',
+    symbol: symbol,
+    limit: 50
+  };
+  
+  const { signature, timestamp } = generateSignature(params);
+  
+  const response = await fetch(`${BYBIT_BASE_URL}/v5/position/closed-pnl?${new URLSearchParams(params)}`, {
+    headers: {
+      'X-BAPI-API-KEY': BYBIT_API_KEY,
+      'X-BAPI-SIGN': signature,
+      'X-BAPI-TIMESTAMP': timestamp,
+      'X-BAPI-RECV-WINDOW': RECV_WINDOW
+    }
+  });
+  
+  return await response.json();
 }
 
 export default async function handler(req, res) {
   try {
-    // Получаем историю сделок
+    // 1. Получаем историю сделок
     const { signature, timestamp, queryString } = generateSignature({
       ...req.query,
-      limit: '50'  // Увеличим лимит для получения большей истории
+      limit: '50'
     });
     
-    const tradesUrl = `${BYBIT_BASE_URL}/v5/execution/list?${queryString}`;
-    const tradesResponse = await fetch(tradesUrl, {
+    const tradesResponse = await fetch(`${BYBIT_BASE_URL}/v5/execution/list?${queryString}`, {
       headers: {
         'X-BAPI-API-KEY': BYBIT_API_KEY,
         'X-BAPI-SIGN': signature,
@@ -63,21 +100,29 @@ export default async function handler(req, res) {
 
     const tradesData = await tradesResponse.json();
     
-    // Если есть сделки, получим информацию о текущих позициях
     if (tradesData.result?.list?.length > 0) {
+      // 2. Получаем баланс
+      const balanceData = await fetchWalletBalance();
+      
+      // 3. Получаем информацию о позициях и PnL для каждого символа
       const uniqueSymbols = [...new Set(tradesData.result.list.map(trade => trade.symbol))];
-      const positionsData = await Promise.all(
-        uniqueSymbols.map(symbol => fetchPositionInfo(symbol))
-      );
+      const [positionsData, pnlData] = await Promise.all([
+        Promise.all(uniqueSymbols.map(symbol => fetchPositionInfo(symbol))),
+        Promise.all(uniqueSymbols.map(symbol => fetchClosedPnL(symbol)))
+      ]);
       
       res.status(200).json({
         trades: tradesData,
-        positions: positionsData
+        balance: balanceData,
+        positions: positionsData,
+        pnl: pnlData
       });
     } else {
       res.status(200).json({
         trades: tradesData,
-        positions: []
+        balance: null,
+        positions: [],
+        pnl: []
       });
     }
   } catch (error) {
